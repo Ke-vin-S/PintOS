@@ -40,6 +40,7 @@
 
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
+char* username = "Kevin>";
 
 #ifdef FILESYS
 /* -f: Format the file system? */
@@ -64,6 +65,9 @@ static char **read_command_line (void);
 static char **parse_options (char **argv);
 static void run_actions (char **argv);
 static void usage (void);
+
+// in interactive shell
+bool reactToCommand(char* command);
 
 #ifdef FILESYS
 static void locate_block_devices (void);
@@ -133,7 +137,37 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
+
     // TODO: no command line passed to kernel. Run interactively 
+
+    int index = 0;
+    uint8_t k;
+    bool breaking = false;
+    do{
+      char* input = malloc(64);
+      index = 0;
+      printf(username);
+
+      do{
+
+        k = input_getc();
+        putchar(k);
+
+        // add to array
+        input[index] = k;
+        index++;
+
+      } while (k != 13);
+      index--;
+      // null terminate string and go to next line
+      input[index] = '\0';
+      printf("\n");
+
+      breaking = reactToCommand(input);
+      free(input);
+      
+    } while (!breaking);
+    
   }
 
   /* Finish up. */
@@ -431,3 +465,48 @@ locate_block_device (enum block_type role, const char *name)
     }
 }
 #endif
+
+bool reactToCommand(char* command){
+
+  char* whoami = "whoami";
+  char* shutdown = "shutdown";
+  char* time = "time";
+  char* ram = "ram";
+  char* thread = "thread";
+  char* priority = "priority";
+  char* exit = "exit";
+
+  if (!strcmp(command, whoami)){
+    printf(username);
+    printf("220578A\n");
+  } else
+  if (!strcmp(command, shutdown))
+  {
+    shutdown_power_off();
+  }else
+  if (!strcmp(command, time))
+  {
+    printf("%"PRId64"\n", timer_ticks());
+  }else
+  if (!strcmp(command, ram))
+  {
+    printf ("%"PRIu32" kB RAM...\n",
+          init_ram_pages * PGSIZE / 1024);
+  }else
+  if (!strcmp(command, thread))
+  {
+    thread_print_stats();
+  }else
+  if (!strcmp(command, priority))
+  {
+    printf("%i\n", thread_get_priority());
+  }else
+  if (!strcmp(command, exit))
+  {
+    printf("Exiting thread\n");
+    return true;
+  }else{
+    printf("Invalid command\n");
+  }
+return false;
+}
