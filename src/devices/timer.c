@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "../lib/kernel/list.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -24,11 +25,23 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+struct sleeping_thread
+{
+  struct thread* thr;
+  int64_t end;
+  struct list_elem elem;
+};
+
+static struct list sleep_list;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+
+bool a_before_than_b(const struct list_elem* a,const struct list_elem* b, void* hehe UNUSED);
+void sleep_list_update (void);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -36,6 +49,7 @@ void
 timer_init (void) 
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
+  list_init(&sleep_list);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
 
@@ -89,13 +103,19 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
-
+  int64_t end = timer_ticks() + ticks;
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
-}
 
+  struct thread *cur = thread_current ();
+  struct sleeping_thread slpth;
+  slpth.end = end;
+  slpth.thr = cur;
+  list_insert_ordered(&sleep_list, &slpth.elem, a_before_than_b, NULL);
+
+  enum intr_level old_level = intr_disable();
+  thread_block();
+  intr_set_level(old_level);
+}
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
    turned on. */
 void
@@ -172,6 +192,19 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  struct list_elem* e;
+
+  while (!list_empty(&sleep_list)) {
+      e = list_front(&sleep_list);
+      struct sleeping_thread *slpth = list_entry(e, struct sleeping_thread, elem);
+
+      if (slpth->end > ticks)
+          break;
+
+      list_remove(e);
+      thread_unblock(slpth->thr);
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -243,4 +276,11 @@ real_time_delay (int64_t num, int32_t denom)
      the possibility of overflow. */
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000)); 
+}
+
+bool a_before_than_b(const struct list_elem *a,const struct list_elem *b, void* hehe UNUSED)
+{
+    struct sleeping_thread* st_a = list_entry(a, struct sleeping_thread, elem);
+    struct sleeping_thread* st_b = list_entry(b, struct sleeping_thread, elem);
+    return st_a->end < st_b->end;
 }
