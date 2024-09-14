@@ -240,12 +240,12 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   list_sort(&ready_list, thread_priority_comp, NULL);
-  struct thread *thr = list_entry (list_front(&ready_list), struct thread, elem);
-
-  if (thread_current() != idle_thread && thread_current()->priority < thr->priority)
+  // struct thread *thr = list_entry (list_front(&ready_list), struct thread, elem);
+  t->status = THREAD_READY;
+  
+  if (thread_current() != idle_thread && thread_current()->priority < t->priority)
     thread_yield();
   
-  t->status = THREAD_READY;
   intr_set_level (old_level);
 }
 
@@ -312,7 +312,6 @@ thread_yield (void)
   enum intr_level old_level;
   
   ASSERT (!intr_context ());
-
   old_level = intr_disable ();
   if (cur != idle_thread){
     list_push_back (&ready_list, &cur->elem);
@@ -344,8 +343,10 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  enum intr_level old_level = intr_disable();
   thread_current ()->priority = new_priority;
   thread_yield();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
